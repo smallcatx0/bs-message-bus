@@ -27,29 +27,6 @@ func HostName() string {
 	return hostname
 }
 
-func InitAppConf(filepath *string) error {
-	AppConf.SetConfigFile(*filepath)
-	AppConf.SetConfigType("yaml")
-
-	// 设置默认（与 app.yaml 顶层键、Env()/IsDebug()/HttpPort() 访问器保持一致）
-	AppConf.SetDefault("env", "dev")
-	AppConf.SetDefault("debug", true)
-
-	err := AppConf.ReadInConfig()
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-func Env() string {
-	return AppConf.GetString("env")
-}
-
-func IsDebug() bool {
-	return AppConf.GetBool("debug")
-}
-
 // 启动参数
 
 type FlagParam struct {
@@ -73,4 +50,28 @@ func Flag() bool {
 	// 存到viper中
 	AppConf.Set("flag_param.c", Param.C)
 	return true
+}
+
+// 初始化配置
+func MustInitAppConf(filepath string) {
+
+	AppConf.SetConfigFile(filepath)
+	AppConf.SetConfigType("yaml")
+	// 设置默认值
+	AppConf.SetDefault("env", "dev")
+	AppConf.SetDefault("debug", true)
+
+	err := AppConf.ReadInConfig()
+	if err != nil {
+		panic(err)
+	}
+	// TODO: 兼容 env 环境变量
+}
+
+func Env() string {
+	return AppConf.GetString("env")
+}
+
+func IsDebug() bool {
+	return AppConf.GetBool("debug")
 }

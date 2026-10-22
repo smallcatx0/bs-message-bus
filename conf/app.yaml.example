@@ -1,0 +1,6 @@
+name: app
+desc: 应用程序配置
+ver: 1.0.0
+env: dev
+debug: true
+
