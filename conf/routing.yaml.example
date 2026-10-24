@@ -1,0 +1,56 @@
+# 消息总线路由配置模板（D02-8）
+# 复制为 conf/routing.yaml 使用；文件路径经 app 配置的 routing_file 键传入。
+# 内容不入库（总线不持久化配置），V1 以此本地文件代替配置中心，热更新经 fsnotify 生效。
+
+# 监听定义：从哪里消费
+listeners:
+  - id: order-main
+    source: mq            # mq | canal
+    topic: order-topic
+    group: bus-consumer
+    tag: ""               # 可空，空串匹配任意
+    enabled: true
+
+# 路由定义：什么消息投给谁（match 至少给 mq 的 topic 或 canal 的 db.table 之一）
+routes:
+  - id: order-to-erp
+    match:
+      topic: order-topic  # mq 维度
+      tag: created
+      db: ""              # canal 维度（source=canal 路由 db/table 必填，供白名单派生，蓝本 7.5）
+      table: ""
+      event: ""           # INSERT | UPDATE | DELETE | 空=任意
+    subscribers: [erp-callback]
+
+# 订阅方：回调目标与投递策略
+subscribers:
+  - id: erp-callback
+    endpoint: http://erp.internal/hook/msg   # 必须 http/https 绝对 URL
+    timeout: 5s                               # 支持 Go 时长字符串或按秒数字
+    retry: { max_attempts: 5, initial_backoff: 1s, max_backoff: 2m, multiplier: 2.0 }
+    rate_limit: 0                             # 0=不限（并发上限，预留）
+    headers: {}
+    # 鉴权方案可插拔：none | static_header | hmac（V1 仅前两者生效）
+    auth: { mode: static_header, header: X-Callback-Token, token: "REPLACE_ME" }
+    # 熔断/探活配置：V1 仅存配置，消费方 M2 接线（蓝本 6.6.1）
+    breaker:
+      enabled: true
+      error_rate_threshold: 0.5
+      slow_call_rate: 0.5
+      slow_call_duration: 3s
+      window_size: 20
+      open_timeout: 500ms
+      backoff_factor: 2.0
+      max_open_timeout: 30s
+      half_open_max_probe: 1
+      max_dwell: 10m
+      consecutive_success: 1
+
+# 暂停规则：热插拔止损。V1 语义=丢弃（命中即 ack 源并跳过投递，不暂存不补投，D02-6）
+# 注意：target 必须引用上面已定义的 listener topic / subscriber，否则加载时校验失败。
+pauses:
+  - id: pause-order-created
+    scope: tag            # topic | tag | subscriber
+    target: order-topic:created   # scope=topic→topic；scope=tag→"topic:tag"（topic 名禁含':'）；scope=subscriber→订阅方 id
+    reason: 下游发布止损
+    expire: 0             # Unix 秒；0=永久；过期在读取时判定，不依赖定时器

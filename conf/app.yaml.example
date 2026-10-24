@@ -4,3 +4,7 @@ ver: 1.0.0
 env: dev
 debug: true
 
+# 路由配置文件路径（相对工作目录或绝对路径）；内容不入库，热更新见 internal/config。
+# 复制 conf/routing.yaml.example 到该路径后即可生效。
+routing_file: conf/routing.yaml
+
