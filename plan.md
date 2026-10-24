@@ -7,3 +7,4 @@
 - [ ] 配置中心 gRPC 来源接入：后期配置由配置中心经 gRPC 下发，替换 fileSource 占位（D02 验收时拍板，ConfigSource 抽象已为该替换预留，Load/Watch 接口不变）。启动时另立设计文档，不在 plan 展开细节。
 - [x] ~~V1 蓝本分阶段拆分与首个实施模块立项~~ → 结论：拆分顺序与首个启动模块（阶段 0 = internal/config，D02 已完成并归档 docs/history/）已固化为实施基线，正文见 [docs/分布式消息总线架构设计.md](docs/分布式消息总线架构设计.md) 第 13.1 节。
 - [x] ~~D01 开发流程规范（用户直接发起，未经常规“先入 plan 再升级”流转）~~ → 结论：验收通过，规则已沉淀至 AGENTS.md「文档与进度管理」与项目规范第 10 节，设计文档归档于 docs/history/开发流程规范-design.md。
+- [x] ~~D03 分发与路由（用户直接发起，配置消费侧窄竖切）~~ → 结论：验收通过，dispatcher 路由消费契约（ResolveMQ/ResolveCanal）+ config.RunWatch 热装配落地，归档 docs/history/分发与路由-design.md；熔断/去重/重试/DLQ 等完整分发机制属后续 D0n，启动时另行立项。

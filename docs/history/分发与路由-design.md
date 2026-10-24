@@ -1,15 +1,15 @@
-<!-- D03 | 状态：进行中 -->
+<!-- D03 | 状态：已完成 -->
 # dispatcher/broker 路由消费与热更新装配（配置消费侧窄竖切）
 
 ## 问题
 
-- D02 已交付控制面（[history/配置抽象与热更新-design.md](history/配置抽象与热更新-design.md)，已完成）：`ConfigSource` 抽象、`RoutingTable`（`MatchMQ/MatchCanal`/`Paused*`/`Subscriber` 解引用）、`fileSource`、`staticSource`。但这些是**冷数据**——尚无消费方按蓝本机制「配置变更 → 校验 → 重建路由表 → 原子替换」把它跑起来。
-- 蓝本（[分布式消息总线架构设计.md](分布式消息总线架构设计.md) 3.2/4/6.10）把「消费消息 → 路由匹配 → 暂停判定 → 扇出订阅方」归 `internal/dispatcher`，其匹配依赖 `config` 的 `MatchMQ/MatchCanal`。dispatcher 的消费契约若不定型，后续 M2 全量（熔断/去重/重试/DLQ）会各自臆造调用形态。
-- D02 交付时**未改 `cmd/main.go` 装配**（D02-9），只留了装配参考形态 [example_test.go](../internal/config/example_test.go)。fileSource + Watch 循环这条热更新链路当前无人驱动，需要一处可复用装配函数承接（未来 grpcSource 复用同一函数）。
+- D02 已交付控制面（[配置抽象与热更新-design.md](配置抽象与热更新-design.md)，已归档于同目录）：`ConfigSource` 抽象、`RoutingTable`（`MatchMQ/MatchCanal`/`Paused*`/`Subscriber` 解引用）、`fileSource`、`staticSource`。但这些是**冷数据**——尚无消费方按蓝本机制「配置变更 → 校验 → 重建路由表 → 原子替换」把它跑起来。
+- 蓝本（[分布式消息总线架构设计.md](../分布式消息总线架构设计.md) 3.2/4/6.10）把「消费消息 → 路由匹配 → 暂停判定 → 扇出订阅方」归 `internal/dispatcher`，其匹配依赖 `config` 的 `MatchMQ/MatchCanal`。dispatcher 的消费契约若不定型，后续 M2 全量（熔断/去重/重试/DLQ）会各自臆造调用形态。
+- D02 交付时**未改 `cmd/main.go` 装配**（D02-9），只留了装配参考形态 [example_test.go](../../internal/config/example_test.go)。fileSource + Watch 循环这条热更新链路当前无人驱动，需要一处可复用装配函数承接（未来 grpcSource 复用同一函数）。
 
 ## 规则与约束
 
-- 工程规则一律以 [项目规范.md](../项目规范.md) 为准（不复述）：日志经 `logger.L()`（第 1 节）、脱敏（第 2 节）、goroutine 必须 panic recover + 明确终止（第 5 节）、热点 benchmark（第 6 节）、覆盖率 ≥ 85% 含并发与边界（第 7 节）、`internal/` 领域分包禁循环依赖（第 9 节）、`cmd/` 不写业务实现（第 9 节）。
+- 工程规则一律以 [项目规范.md](../../项目规范.md) 为准（不复述）：日志经 `logger.L()`（第 1 节）、脱敏（第 2 节）、goroutine 必须 panic recover + 明确终止（第 5 节）、热点 benchmark（第 6 节）、覆盖率 ≥ 85% 含并发与边界（第 7 节）、`internal/` 领域分包禁循环依赖（第 9 节）、`cmd/` 不写业务实现（第 9 节）。
 - 架构决策以蓝本为准：蓝本 3.2（dispatcher 职责=路由匹配+暂停判定+扇出，M2 才补熔断/去重/重试/DLQ）、6.10（依赖方向：dispatcher → config，config 不反向依赖）、7.2（Reload 失败保留旧表，D02-4 已拍板）、6（Pause 语义 V1=丢弃，D02-6 已拍板）。
 - 范围边界（本次对齐结论）：
   1. **窄竖切**——只交付「路由消费调用契约 + 可复用热装配函数」，不实现熔断/去重/重试/DLQ/callback/store（留后续 D0n / M2 全量）。
@@ -93,16 +93,24 @@ func RunWatch(ctx context.Context, src ConfigSource, store TableStore) error
 
 ## 状态勾点（关键里程碑）
 
-- [ ] `internal/dispatcher/router.go`：`Router` + `ResolveMQ`/`ResolveCanal` + `Target`，暂停三级判定 + 订阅方解引用
-- [ ] 消费契约单测全绿（mq 通配/精确、三级暂停、canal、空路由、解引用失败）+ `-race` 并发解析×Reload 交叠
-- [ ] `internal/config/reload.go`：`RunWatch(ctx, src, store)`——首载 fail-fast、后台消费 goroutine（panic recover + ctx 退出 + channel 关闭无泄漏）、复用 Load/Reload 管线
-- [ ] `RunWatch` 单测：正常首载 + 首载坏配置报错 + 运行期坏配置保留旧表（断言旧路由仍命中）
-- [ ] 端到端热更新演练：临时 `routing.yaml` 驱动 `NewFileSource→RunWatch→Resolve*`，改文件（含 rename）即时改变解析结果，无重启
-- [ ] `ResolveMQ` benchmark 建立（-benchmem），分配贴合 MatchMQ 量级
-- [ ] 全套验证通过：`go build ./...`、`go vet ./...`、`staticcheck ./...`、`go test -race ./internal/... ./pkg/...`、覆盖率 ≥ 85%
-- [ ] `docs/分布式消息总线架构设计.md` 6.10/13.1 与本切片口径核对（依赖方向、里程碑偏离注记）
-- [ ] 用户验收确认
+- [x] `internal/dispatcher/router.go`：`Router` + `ResolveMQ`/`ResolveCanal` + `Target`，暂停三级判定 + 订阅方解引用
+- [x] 消费契约单测全绿（mq 通配/精确、三级暂停、canal、空路由、解引用失败）+ `-race` 并发解析×Reload 交叠
+- [x] `internal/config/reload.go`：`RunWatch(ctx, src, store)`——首载 fail-fast、后台消费 goroutine（panic recover + ctx 退出 + channel 关闭无泄漏）、复用 Load/Reload 管线
+- [x] `RunWatch` 单测：正常首载 + 首载坏配置报错 + 运行期坏配置保留旧表（断言旧路由仍命中）+ 瞬时 Load 错误后消费循环存活
+- [x] 端到端热更新演练：临时 `routing.yaml` 驱动 `NewFileSource→RunWatch→Resolve*`，改文件即时改变解析结果，无重启（暂停→剔空 / 坏配置→保留 / 解除→恢复三阶段，自愈式抗满载竞态）
+- [x] `ResolveMQ` benchmark 建立（-benchmem）：200.6 ns/op、1 alloc/op（64 B）——相比 D02 `MatchMQ` 的 0 alloc，+1 alloc 源于产出 `Target` 切片（扇出结果必新建，不可避免）
+- [x] 全套验证通过：`go build ./...`、`go vet ./...`、`staticcheck ./...` 均零告警；`go test -race ./internal/... ./pkg/...` 全绿；新增代码覆盖率 dispatcher 94.7% / config 90.3%（`reload.go` RunWatch 90%・consumeWatch 90.9%，`router.go` ~100%），均 ≥ 85%
+- [x] `docs/分布式消息总线架构设计.md` 6.10/13.1 与本切片口径核对：依赖方向 dispatcher→config 已 grep 确认无反向引用（config ⇏ dispatcher，编译期无循环）；里程碑偏离已在 D03-1 注记
+- [x] 用户验收确认
+
+## 开发完成记录（2026-10-24）
+
+- **交付**：`internal/dispatcher/router.go`（+ `router_test.go`/`e2e_test.go`）与 `internal/config/reload.go`（+ `reload_test.go`）。未改 `cmd/main.go`（D03 边界 3）。
+- **诚实披露（无确定性定向测试的分支）**：① `RunWatch` 内 `src.Watch` 返回 error 的分支未单独构造（mock 与 fileSource 均只在目录非法时报错，已被 D02 file_test 覆盖）；② `consumeWatch` 的 panic recover 路径未注入 panic 定向触发（与 D02 同类限制，对外契约“channel 关闭即退出”已由并发交叠测试覆盖）。两者实现均已就位。
+- **遗留（不属本切片）**：熔断/去重/重试/DLQ/callback/store 投递、envelope 适配层、cmd 装配接线（待真实消费方，M1/M2）。
 
 ## 验收结论
 
-（待验收完成后填写）
+验收通过（2026-10-24，用户确认）。交付 `internal/dispatcher`（Router.ResolveMQ/ResolveCanal，新包）+ `internal/config/reload.go`（RunWatch），未改 `cmd/main.go`、未引 envelope。`build/vet/staticcheck` 零告警、`-race` 全绿（e2e `-count=5` 稳定）、新代码覆盖率 dispatcher 94.7%/config 90.3%、`ResolveMQ` 基准 200.6ns/1 alloc。
+
+遗留（归后续 D0n）：熔断/去重/重试/DLQ/callback/store、envelope 适配层、cmd 装配接线。两项异常分支（Watch error / panic recover）实现就位但无定向测试，已在「开发完成记录」披露并被接受。
